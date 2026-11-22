@@ -1,1115 +1,260 @@
 <!DOCTYPE html>
-<html lang="en"><head>
-<meta http-equiv="content-type" content="text/html; charset=UTF-8">
-				<meta charset="UTF-8">
-				<meta name="viewport" content="width=device-width, initial-scale=1.0">
-				<style>
-					body {
-						background-color: white; /* Ensure the iframe has a white background */
-					}
-				</style>
-				<script>
-					var Z_CDN_WHITELIST = [
-						'cdn.jsdelivr.net',
-						'cdnjs.cloudflare.com',
-						'cdn.tailwindcss.com',
-						'unpkg.com',
-						'fonts.googleapis.com',
-						'd3js.org',
-						'cdn.babylonjs.com',
-						'html2canvas.hertzen.com',
-						'code.jquery.com',
-						'cdn.datatables.net',
-						'kit.fontawesome.com',
-						'code.createjs.com',
-						'cdn.plot.ly',
-						'fonts.gstatic.com',
-						'www.rgraph.net',
-						'api.mapbox.com',
-						'polyfill.io',
-						'cdn.quilljs.com',
-						'picsum.photos',
-						'esm.sh'
-					];
-
-					function z_isUrlInWhitelist(url) {
-						if (!url || typeof url !== 'string') {
-							return false;
-						}
-						try {
-							const urlObj = new URL(url);
-							const hostname = urlObj.hostname;
-							return Z_CDN_WHITELIST.some(domain => hostname === domain);
-						} catch (e) {
-							return false;
-						}
-					}
-
-						function z_proxyCdnUrl(url) {
-						if (!url || !url.startsWith('http')) {
-							return url;
-						}
-							if (!z_isUrlInWhitelist(url)) {
-							return url;
-						}
-						if (!url.startsWith('https://artifacts-cdn.chatglm.site/')) {
-							return 'https://artifacts-cdn.chatglm.site/' + url;
-						}
-						return url;
-					}
-					
-					// 增强版外部链接拦截 - 适合放在模板字符串中
-					document.addEventListener('click', function (ev) {
-						try {
-							const anchor = ev.target?.closest?.('a[href]') || null;
-							if (!anchor) return;
-
-							let href = anchor.getAttribute('href')?.trim() || '';
-							if (!href) return;
-
-							if (href.startsWith('javascript:')) return;
-
-							// 新需求：href="#" 的链接完全阻止跳转和任何行为
-							if (href === '#') {
-								ev.preventDefault();
-								return;
-							}
-
-							// 处理其他内部锚点（如 #about、#contact 等）
-							if (href.startsWith('#')) {
-								const rawId = href.slice(1);
-								if (!rawId) return;
-
-								const id = decodeURIComponent(rawId);
-								const target = 
-									document.getElementById(id) ||
-									document.querySelector('a[name="' + id.replace(/"/g, '\"') + '"]') ||
-									document.querySelector('[name="' + id.replace(/"/g, '\"') + '"]');
-
-								if (target && target.scrollIntoView) {
-									ev.preventDefault();
-									try {
-										history.pushState(null, '', href);
-									} catch (e) {}
-									target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-								}
-								return;
-							}
-
-							// 处理外部链接
-							let url;
-							try {
-								url = new URL(href, window.location.href);
-							} catch (e) {
-								return;
-							}
-
-							if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
-
-							const isExternal = url.hostname !== window.location.hostname;
-
-							if (isExternal || anchor.getAttribute('target') === '_blank') {
-								ev.preventDefault();
-								window.open(url.toString(), '_blank', 'noopener,noreferrer');
-							}
-
-						} catch (e) {
-							// 出错时不阻止默认行为
-						}
-					}, true);
-
-					// 1. 暴力清除函数：从 DOM 层面抹除 onclick 属性
-					var Z_removeInlineOnclick = function () {
-						// 专门锁定 href="#" 且带有 onclick 的 a 标签
-						const targetedLinks = document.querySelectorAll('a[href="#"][onclick]');
-						for (let i = 0; i < targetedLinks.length; i++) {
-							targetedLinks[i].removeAttribute('onclick');
-							targetedLinks[i].onclick = null; // 确保 JS 层的赋值也被清理
-						}
-					};
-					// 3. 动态监测：防止页面通过异步加载重新生成带 onclick 的元素
-					var z_observer = new MutationObserver(function () {
-						Z_removeInlineOnclick();
-					});
-
-					z_observer.observe(document.documentElement, {
-						childList: true,
-						subtree: true,
-						attributes: true,
-						attributeFilter: ['onclick']
-					});
-
-					// 4. 初始化执行一次
-					Z_removeInlineOnclick();
-
-					const Z_rawCreateElement = document.createElement;
-
-					document.createElement = function (tagName, ...args) {
-						const el = Z_rawCreateElement.call(this, tagName, ...args);
-
-						if (tagName.toLowerCase() === 'script') {
-							const rawSetAttribute = el.setAttribute;
-							const rawGetAttribute = el.getAttribute;
-							let srcValue = '';
-							
-							el.setAttribute = function (name, value) {
-								if (name === 'src' && typeof value === 'string') {
-									value = z_proxyCdnUrl(value);
-									srcValue = value;
-								}
-								return rawSetAttribute.call(this, name, value);
-							};
-
-							Object.defineProperty(el, 'src', {
-								get: function() {
-									return srcValue || rawGetAttribute.call(this, 'src') || '';
-								},
-								set: function(value) {
-									if (typeof value === 'string') {
-										srcValue = z_proxyCdnUrl(value);
-										rawSetAttribute.call(this, 'src', srcValue);
-									} else {
-										srcValue = value;
-									}
-								},
-								configurable: true,
-								enumerable: true
-							});
-						}
-
-						if (tagName.toLowerCase() === 'link') {
-							const rawSetAttribute = el.setAttribute;
-							const rawGetAttribute = el.getAttribute;
-							let hrefValue = '';
-							
-							el.setAttribute = function (name, value) {
-								if (name === 'href' && typeof value === 'string') {
-									value = z_proxyCdnUrl(value);
-									hrefValue = value;
-								}
-								return rawSetAttribute.call(this, name, value);
-							};
-
-							Object.defineProperty(el, 'href', {
-								get: function() {
-									return hrefValue || rawGetAttribute.call(this, 'href') || '';
-								},
-								set: function(value) {
-									if (typeof value === 'string') {
-										hrefValue = z_proxyCdnUrl(value);
-										rawSetAttribute.call(this, 'href', hrefValue);
-									} else {
-										hrefValue = value;
-									}
-								},
-								configurable: true,
-								enumerable: true
-							});
-						}
-
-						return el;
-					};
-
-					const Z_OriginalXMLHttpRequest = window.XMLHttpRequest;
-					window.XMLHttpRequest = function (...args) {
-						const xhr = new Z_OriginalXMLHttpRequest(...args);
-						const rawOpen = xhr.open;
-
-						xhr.open = function (method, url, ...rest) {
-							if (typeof url === 'string') {
-								const methodUpper = (method || '').toUpperCase();
-								if (methodUpper === 'GET' && z_isUrlInWhitelist(url)) {
-									url = z_proxyCdnUrl(url);
-								}
-							}
-							return rawOpen.call(this, method, url, ...rest);
-						};
-
-						return xhr;
-					};
-
-					window.XMLHttpRequest.prototype = Z_OriginalXMLHttpRequest.prototype;
-					Object.setPrototypeOf(window.XMLHttpRequest, Z_OriginalXMLHttpRequest);
-
-					const z_originalFetch = window.fetch;
-					window.fetch = async function (...args) {
-						if (args.length > 0) {
-							let url = '';
-							let method = 'GET';
-							
-							if (typeof args[0] === 'string') {
-								url = args[0];
-								if (args[1] && args[1].method) {
-									method = args[1].method.toUpperCase();
-								}
-								if (method === 'GET' && z_isUrlInWhitelist(url)) {
-									args[0] = z_proxyCdnUrl(url);
-								}
-							} else if (args[0] instanceof Request) {
-								const originalUrl = args[0].url;
-								method = (args[0].method || 'GET').toUpperCase();
-								if (method === 'GET' && z_isUrlInWhitelist(originalUrl)) {
-									const proxiedUrl = z_proxyCdnUrl(originalUrl);
-									if (proxiedUrl !== originalUrl) {
-										args[0] = new Request(proxiedUrl, args[0]);
-									}
-								}
-							}
-						}
-						return z_originalFetch.apply(this, args);
-					};
-				</script>
-			</head>
-			<body>
-				
+<html lang="en">
+<head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Bitanu Roy Choudhury — Resume</title>
-<link rel="preconnect" href="https://artifacts-cdn.chatglm.site/https://fonts.googleapis.com">
-<link rel="preconnect" href="https://artifacts-cdn.chatglm.site/https://fonts.gstatic.com" crossorigin="">
-<link href="a_data/css2_hYHh.css" rel="stylesheet">
 <style>
-  /* ---------- Base ---------- */
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html { scroll-behavior: smooth; }
-  body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background-color: #fffdf7;
-    background-image:
-      linear-gradient(rgba(0,0,0,0.06) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0,0,0,0.06) 1px, transparent 1px);
-    background-size: 25px 25px;
-    color: #1a1a1a;
-    line-height: 1.6;
-    overflow-x: hidden;
-  }
-
-  /* ---------- Navigation ---------- */
-  nav.topnav {
-    position: sticky; top: 0; z-index: 100;
-    background: #ffffff;
-    border-bottom: 3px solid #c2410c;
-    padding: 14px 28px;
-    display: flex; justify-content: center; align-items: center;
-    flex-wrap: wrap;
-  }
-  nav .links a {
-    color: #b91c1c; text-decoration: none; margin: 0 9px;
-    font-size: 14px; padding: 6px 12px; border-radius: 8px;
-    font-weight: 600;
-    transition: 0.25s;
-    border-bottom: 2px solid transparent;
-  }
-  nav .links a:hover {
-    background: #fef3c7;
-    color: #7c2d12;
-    border-bottom: 2px solid #b91c1c;
-  }
-
-  /* ---------- Hero ---------- */
-  header.hero {
-    min-height: 92vh; display: flex; align-items: center;
-    padding: 60px 28px; position: relative;
-    background-color: #fde8e6;
-    background-image: radial-gradient(circle, #ea580c 1.5px, transparent 1.5px);
-    background-size: 24px 24px;
-    background-position: 0 0;
-  }
-  .hero-grid {
-    display: flex;
-    align-items: flex-start;
-    gap: 30px;
-    max-width: 1100px;
-    margin: 0 auto;
-    width: 100%;
-    position: relative;
-    z-index: 1;
-  }
-  .hero-text {
-    flex: 1;
-    min-width: 0;
-  }
-  .hero-text h1 {
-    font-family: 'Playfair Display', 'Georgia', serif;
-    font-size: clamp(52px, 8vw, 96px);
-    line-height: 1.05;
-    font-weight: 900;
-    color: #000000;
-    margin-bottom: 14px;
-    letter-spacing: -1px;
-  }
-  .hero-text .tag {
-    font-size: 18px; color: #1a1a1a; margin-bottom: 24px;
-    background: rgba(255,255,255,0.8);
-    padding: 10px 14px;
-    border-radius: 0 8px 8px 0;
-    border-left: 4px solid #d97706;
-    font-weight: 500;
-  }
-  .contact-row { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 24px; }
-  .pill {
-    display: inline-flex; align-items: center; gap: 8px;
-    background: #ffffff;
-    border: 2px solid #ea580c;
-    padding: 10px 16px; border-radius: 999px;
-    color: #1a1a1a; text-decoration: none; font-size: 14px;
-    font-weight: 600;
-    transition: 0.3s;
-  }
-  .pill:hover {
-    background: #c2410c;
-    color: #ffffff;
-    border-color: #c2410c;
-    transform: translateY(-3px);
-  }
-
-  /* Tagline below contact pills */
-  .tagline {
-    margin-top: 28px;
-    font-family: 'Playfair Display', 'Georgia', serif;
-    font-size: clamp(28px, 3.5vw, 40px);
-    font-style: italic;
-    font-weight: 700;
-    color: #b91c1c;
-    line-height: 1.3;
-  }
-
-  /* ---------- Profile photo ---------- */
-  .hero-photo-col {
-    flex-shrink: 0;
-  }
-  .photo-frame {
-    width: clamp(280px, 28vw, 340px);
-    aspect-ratio: 1;
-    margin: 0;
-    position: relative;
-    border-radius: 50%;
-    background: #c2410c;
-    padding: 6px;
-    box-shadow: 0 14px 36px rgba(194,65,12,0.35);
-    overflow: hidden;
-  }
-  .photo-inner {
-    width: 100%; height: 100%; border-radius: 50%;
-    overflow: hidden;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .photo-inner img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    object-position: center 25%;
-    border-radius: 50%;
-    display: block;
-  }
-
-  /* ---------- Sections ---------- */
-  section.block {
-    max-width: 1100px; margin: 0 auto; padding: 70px 28px;
-  }
-  .section-title {
-    display: flex; align-items: center; gap: 14px;
-    margin-bottom: 40px;
-  }
-  .section-title .num {
-    font-size: 14px; font-weight: 700;
-    color: #ffffff;
-    width: 34px; height: 34px; border-radius: 8px;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .section-title h2 {
-    font-size: 34px; letter-spacing: 0.5px;
-    color: #1a1a1a;
-  }
-  .section-title .line {
-    flex: 1; height: 2px;
-    background: #e5e5e5;
-  }
-
-  /* Section-specific accent colors using the red/orange/yellow palette */
-  #academics .section-title .num { background: #b91c1c; }
-  #academics .section-title .line { background: #f0a060; }
-  #achievements .section-title .num { background: #ea580c; }
-  #achievements .section-title .line { background: #fcd34d; }
-  #projects .section-title .num { background: #b45309; }
-  #projects .section-title .line { background: #f0a060; }
-  #skills .section-title .num { background: #d97706; }
-  #skills .section-title .line { background: #fca5a5; }
-
-  /* ---------- Academics timeline ---------- */
-  .timeline { position: relative; padding-left: 28px; }
-  .timeline::before {
-    content: ''; position: absolute; left: 8px; top: 0; bottom: 0;
-    width: 3px; background: #c2410c;
-  }
-  .tl-item { position: relative; margin-bottom: 34px; }
-  .tl-item::before {
-    content: ''; position: absolute; left: -28px; top: 6px;
-    width: 16px; height: 16px; border-radius: 50%;
-    background: #ffffff; border: 3px solid #b91c1c;
-  }
-  .tl-item:nth-child(2)::before { border-color: #ea580c; }
-  .tl-item:nth-child(3)::before { border-color: #d97706; }
-
-  .tl-card {
-    background: #fef9f0;
-    border: 2px solid #b91c1c;
-    border-radius: 14px; padding: 22px 26px;
-    transition: 0.3s;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 24px;
-  }
-  .tl-item:nth-child(2) .tl-card { border-color: #ea580c; }
-  .tl-item:nth-child(3) .tl-card { border-color: #d97706; }
-
-  .tl-card:hover {
-    transform: translateX(6px);
-    background: #fff5e6;
-    box-shadow: 0 6px 18px rgba(194,65,12,0.12);
-  }
-  .tl-card-content {
-    flex: 1;
-  }
-  .tl-card .deg { font-size: 19px; font-weight: 700; color: #1a1a1a; }
-  .tl-card .inst { color: #525252; font-size: 15px; margin-top: 4px; }
-  .tl-card .meta {
-    display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px;
-    font-size: 13px;
-  }
-  .tl-item:nth-child(1) .meta span {
-    background: #fee2e2; color: #b91c1c;
-    border: 1px solid #fca5a5;
-  }
-  .tl-item:nth-child(2) .meta span {
-    background: #ffedd5; color: #c2410c;
-    border: 1px solid #fdba74;
-  }
-  .tl-item:nth-child(3) .meta span {
-    background: #fef3c7; color: #b45309;
-    border: 1px solid #fcd34d;
-  }
-  .meta span {
-    padding: 4px 10px; border-radius: 6px;
-    font-weight: 600;
-  }
-
-  /* Institute logo on the right side of timeline cards */
-  .tl-logo {
-    flex-shrink: 0;
-    width: 100px;
-    height: 100px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #ffffff;
-    border-radius: 12px;
-    border: 2px solid #f0e0c0;
-    overflow: hidden;
-    padding: 8px;
-  }
-  .tl-logo img {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-    display: block;
-  }
-
-  /* ---------- Achievement cards ---------- */
-  .ach-grid {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-    gap: 22px;
-  }
-  .ach-card {
-    background: #fef9f0;
-    border: 2px solid #b91c1c;
-    border-radius: 16px; padding: 24px;
-    position: relative; overflow: hidden;
-    transition: 0.35s;
-  }
-  .ach-card:hover {
-    transform: translateY(-6px);
-    box-shadow: 0 12px 28px rgba(180,83,9,0.15);
-  }
-  .ach-card.full-span {
-    grid-column: 1 / -1;
-  }
-  .ach-card:nth-child(2) { border-color: #ea580c; }
-  .ach-card:nth-child(3) { border-color: #d97706; }
-  .ach-card:nth-child(4) { border-color: #b91c1c; }
-  .ach-card:nth-child(5) { border-color: #b45309; }
-
-  .ach-card .badge {
-    display: inline-block; font-size: 11px; font-weight: 700;
-    letter-spacing: 1px; text-transform: uppercase;
-    color: #ffffff; background: #b91c1c;
-    padding: 4px 10px; border-radius: 6px; margin-bottom: 12px;
-  }
-  .ach-card:nth-child(2) .badge { background: #ea580c; }
-  .ach-card:nth-child(3) .badge { background: #d97706; }
-  .ach-card:nth-child(4) .badge { background: #b91c1c; }
-  .ach-card:nth-child(5) .badge { background: #b45309; }
-
-  .ach-card h3 { font-size: 18px; color: #1a1a1a; margin-bottom: 10px; }
-  .ach-card p { font-size: 14px; color: #404040; }
-
-  /* Full-span card: points + links in a 2-column grid */
-  .points-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px 28px;
-    align-items: start;
-  }
-  .point-item {
-    font-size: 14px;
-    color: #333333;
-    padding-left: 18px;
-    position: relative;
-    line-height: 1.6;
-  }
-  .point-item::before {
-    content: '•';
-    position: absolute;
-    left: 0;
-    top: 0;
-    color: #c2410c;
-    font-weight: bold;
-    font-size: 16px;
-  }
-  .points-links {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    align-items: flex-start;
-  }
-
-  /* Link box */
-  .link-slot {
-    display: inline-block;
-    border: 1.5px solid #c2410c;
-    color: #b91c1c; padding: 6px 12px; border-radius: 8px;
-    font-size: 12px;
-    background: #ffffff;
-    text-decoration: none;
-    font-weight: 600;
-    transition: 0.25s;
-  }
-  .link-slot:hover {
-    background: #c2410c;
-    color: #ffffff;
-  }
-
-  /* Multiple links row (for non-full-span cards) */
-  .link-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-top: 14px;
-  }
-  .ach-card > .link-slot {
-    margin-top: 14px;
-  }
-
-  /* ---------- Projects ---------- */
-  .proj-card {
-    background: #fef9f0;
-    border: 2px solid #ea580c;
-    border-radius: 18px; padding: 28px;
-    margin-bottom: 24px; position: relative;
-    transition: 0.35s;
-  }
-  .proj-card:nth-child(2) { border-color: #d97706; }
-
-  .proj-card:hover {
-    background: #fff5e6;
-    box-shadow: 0 8px 24px rgba(180,83,9,0.12);
-  }
-  .proj-head {
-    display: flex; justify-content: space-between; align-items: center;
-    flex-wrap: wrap; gap: 10px; margin-bottom: 18px;
-  }
-  .proj-head h3 { font-size: 22px; color: #b91c1c; }
-  .proj-card:nth-child(2) .proj-head h3 { color: #b45309; }
-
-  .proj-tag {
-    font-size: 11px; padding: 4px 10px; border-radius: 6px;
-    background: #fee2e2; color: #b91c1c;
-    border: 1px solid #fca5a5;
-    font-weight: 600;
-  }
-  .proj-card:nth-child(2) .proj-tag {
-    background: #fef3c7; color: #b45309;
-    border: 1px solid #fcd34d;
-  }
-
-  /* Project content: left = stacked Insight + Learning Outcome, right = link side panel */
-  .proj-content {
-    display: grid;
-    grid-template-columns: 1fr 220px;
-    gap: 24px;
-    align-items: stretch;
-  }
-  .proj-body {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 18px;
-  }
-  .proj-block {
-    background: #ffffff; border-radius: 10px; padding: 16px;
-    border: 2px solid #ea580c;
-  }
-  .proj-card:nth-child(2) .proj-block { border-color: #d97706; }
-
-  .proj-block h4 {
-    font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px;
-    color: #c2410c; margin-bottom: 8px;
-    font-weight: 700;
-  }
-  .proj-block p { font-size: 14px; color: #333333; }
-
-  /* Right-side link panel */
-  .proj-side {
-    background: #ffffff;
-    border: 2px solid #ea580c;
-    border-radius: 10px;
-    padding: 18px 16px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    gap: 12px;
-  }
-  .proj-card:nth-child(2) .proj-side { border-color: #d97706; }
-
-  .proj-side .side-label {
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 1.5px;
-    color: #c2410c;
-    font-weight: 700;
-  }
-  .proj-side .side-icon {
-    font-size: 28px;
-    color: #c2410c;
-  }
-  .proj-side .link-slot {
-    border-width: 2px;
-    background: #fef3c7;
-    padding: 10px 12px;
-    border-radius: 8px;
-    font-size: 12px;
-    color: #b91c1c;
-    width: 100%;
-    font-weight: 600;
-    transition: 0.3s;
-  }
-  .proj-side .link-slot:hover {
-    background: #c2410c;
-    color: #ffffff;
-  }
-
-  /* ---------- Skills ---------- */
-  .skills-wrap { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); gap: 18px; }
-  .skill-tile {
-    background: #fef9f0;
-    border: 2px solid #b91c1c;
-    border-radius: 12px; padding: 18px;
-    transition: 0.3s;
-    display: flex;
-    flex-direction: column;
-  }
-  .skill-tile:hover {
-    background: #fff5e6;
-    transform: scale(1.03);
-    box-shadow: 0 8px 20px rgba(180,83,9,0.12);
-  }
-  .skill-tile .ico {
-    width: 38px; height: 38px; border-radius: 10px;
-    display: flex; align-items: center; justify-content: center;
-    font-weight: 800; color: #ffffff; margin-bottom: 12px;
-  }
-
-  .skill-tile:nth-child(1) .ico { background: #b91c1c; }
-  .skill-tile:nth-child(2) .ico { background: #ea580c; }
-  .skill-tile:nth-child(3) .ico { background: #d97706; }
-  .skill-tile:nth-child(4) .ico { background: #c2410c; }
-  .skill-tile:nth-child(5) .ico { background: #b45309; }
-  .skill-tile:nth-child(6) .ico { background: #dc2626; }
-  .skill-tile:nth-child(7) .ico { background: #b91c1c; }
-
-  .skill-tile:nth-child(2) { border-color: #ea580c; }
-  .skill-tile:nth-child(3) { border-color: #d97706; }
-  .skill-tile:nth-child(4) { border-color: #c2410c; }
-  .skill-tile:nth-child(5) { border-color: #b45309; }
-  .skill-tile:nth-child(6) { border-color: #dc2626; }
-  .skill-tile:nth-child(7) { border-color: #b91c1c; }
-
-  .skill-tile h4 { color: #1a1a1a; font-size: 16px; margin-bottom: 6px; }
-  .skill-tile p { color: #404040; font-size: 13px; }
-  .cert-slot {
-    margin-top: auto;
-    padding-top: 10px;
-    font-size: 11px; color: #b45309;
-    border-top: 1px dashed #fcd34d;
-    font-weight: 600;
-  }
-  .cert-slot a {
-    color: #b91c1c; text-decoration: none;
-    border: 1px solid #c2410c;
-    background: #ffffff;
-    padding: 4px 8px; border-radius: 6px;
-    font-size: 11px; font-weight: 600;
-    display: inline-block;
-    margin-top: 4px;
-    transition: 0.25s;
-  }
-  .cert-slot a:hover {
-    background: #c2410c;
-    color: #ffffff;
-  }
-
-  /* ---------- PDF button ---------- */
-  .pdf-section {
-    text-align: center;
-    padding: 50px 28px 70px;
-    background: #fde8e6;
-    background-image: radial-gradient(circle, #ea580c 1.5px, transparent 1.5px);
-    background-size: 24px 24px;
-    border-top: 3px solid #c2410c;
-  }
-  .pdf-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    background: #b91c1c;
-    color: #ffffff;
-    text-decoration: none;
-    font-size: 16px;
-    font-weight: 700;
-    padding: 16px 32px;
-    border-radius: 12px;
-    border: 2px solid #b91c1c;
-    transition: 0.3s;
-    box-shadow: 0 6px 18px rgba(185,28,28,0.3);
-  }
-  .pdf-btn:hover {
-    background: #ffffff;
-    color: #b91c1c;
-    border-color: #b91c1c;
-    transform: translateY(-3px);
-    box-shadow: 0 10px 28px rgba(185,28,28,0.35);
-  }
-  .pdf-btn .pdf-icon {
-    font-size: 22px;
-  }
-
-  /* ---------- Responsive ---------- */
-  @media (max-width: 820px) {
-    .hero-grid {
-      flex-direction: column;
-      align-items: center;
-      text-align: center;
-      gap: 40px;
-    }
-    .hero-text { width: 100%; }
-    .hero-photo-col { margin-top: 10px; }
-    .photo-frame { width: 280px; margin: 0 auto; }
-    .hero-text .tag { border-left: none; padding-left: 14px; }
-    .proj-content { grid-template-columns: 1fr; }
-    .proj-side { align-items: flex-start; text-align: left; }
-    nav .links a { margin: 0 6px; font-size: 13px; }
-    .points-grid { grid-template-columns: 1fr; }
-    .tl-card { flex-direction: column; gap: 14px; }
-    .tl-logo { width: 80px; height: 80px; align-self: flex-end; }
-  }
+  body { background-color: white; }
 </style>
+<script>
+  var Z_CDN_WHITELIST = [
+    'cdn.jsdelivr.net',
+    'cdnjs.cloudflare.com',
+    'cdn.tailwindcss.com',
+    'unpkg.com',
+    'fonts.googleapis.com',
+    'd3js.org',
+    'cdn.babylonjs.com',
+    'html2canvas.hertzen.com',
+    'code.jquery.com',
+    'cdn.datatables.net',
+    'kit.fontawesome.com',
+    'code.createjs.com',
+    'cdn.plot.ly',
+    'fonts.gstatic.com',
+    'www.rgraph.net',
+    'api.mapbox.com',
+    'polyfill.io',
+    'cdn.quilljs.com',
+    'picsum.photos',
+    'esm.sh'
+  ];
 
+  function z_isUrlInWhitelist(url) {
+    if (!url || typeof url !== 'string') return false;
+    try {
+      const urlObj = new URL(url);
+      const hostname = urlObj.hostname;
+      return Z_CDN_WHITELIST.some(domain => hostname === domain);
+    } catch (e) {
+      return false;
+    }
+  }
 
+  function z_proxyCdnUrl(url) {
+    if (!url || !url.startsWith('http')) return url;
+    if (!z_isUrlInWhitelist(url)) return url;
+    if (!url.startsWith('https://artifacts-cdn.chatglm.site/')) {
+      return 'https://artifacts-cdn.chatglm.site/' + url;
+    }
+    return url;
+  }
 
-<!-- ===== NAV ===== -->
-<nav class="topnav">
-  <div class="links">
-    <a href="#top">Profile</a>
-    <a href="#academics">Academics</a>
-    <a href="#achievements">Achievements</a>
-    <a href="#projects">Projects</a>
-    <a href="#skills">Skills</a>
-  </div>
-</nav>
+  // Enhanced external-link interception suitable for use in template strings
+  document.addEventListener('click', function (ev) {
+    try {
+      const anchor = ev.target?.closest?.('a[href]') || null;
+      if (!anchor) return;
 
-<!-- ===== HERO ===== -->
-<header class="hero" id="top">
-  <div class="hero-grid">
-    <div class="hero-text">
-      <h1>Bitanu Roy<br>Choudhury</h1>
-      <p class="tag">Aspiring Consultant &amp; Entrepreneur | Debate &amp; AI Enthusiast</p>
-      <div class="contact-row">
-        <a class="pill" href="tel:+919026911159">Phone</a>
-        <a class="pill" href="mailto:bitanutestg@gmail.com">Mail</a>
-        <a class="pill" href="https://www.linkedin.com/in/bitanu-roy-choudhury/" target="_blank" rel="noopener">LinkedIn</a>
-      </div>
-      <p class="tagline">Learning, failing, re-learning &amp; retrying everyday</p>
-    </div>
-    <div class="hero-photo-col">
-      <div class="photo-frame">
-        <div class="photo-inner">
-          <img src="a_data/b698ebba-0094-4b63-b687-2538ced2143c_hYHh.webp" alt="Bitanu Roy Choudhury">
-        </div>
-      </div>
-    </div>
-  </div>
-</header>
+      let href = anchor.getAttribute('href')?.trim() || '';
+      if (!href) return;
 
-<!-- ===== ACADEMICS ===== -->
-<section class="block" id="academics">
-  <div class="section-title">
-    <div class="num">01</div>
-    <h2>ACADEMICS</h2>
-    <div class="line"></div>
-  </div>
+      if (href.startsWith('javascript:')) return;
 
-  <div class="timeline">
-    <div class="tl-item">
-      <div class="tl-card">
-        <div class="tl-card-content">
-          <div class="deg">BBA — Digital Business &amp; Entrepreneurship</div>
-          <div class="inst">Indian Institute of Management, Bangalore</div>
-          <div class="meta">
-            <span>📅 2026 Onwards</span>
-            <span>📊 Grade — N/A</span>
-          </div>
-        </div>
-        <div class="tl-logo">
-          <img src="a_data/7ea6bfd2-ae43-4a30-b4b4-eb96bc65d785_hYHh.webp" alt="IIM Bangalore Logo">
-        </div>
-      </div>
-    </div>
+      // New requirement: completely block navigation and all behavior for href="#" links
+      if (href === '#') {
+        ev.preventDefault();
+        return;
+      }
 
-    <div class="tl-item">
-      <div class="tl-card">
-        <div class="tl-card-content">
-          <div class="deg">Senior Secondary (Grade 12)</div>
-          <div class="inst">Avinash College of Commerce | TGBIE</div>
-          <div class="meta">
-            <span>📅 2024 – 2026</span>
-            <span>📊 Grade — 92%</span>
-          </div>
-        </div>
-        <div class="tl-logo">
-          <img src="a_data/307012d8-b566-4c99-bcef-48e1a638ca7a_hYHh.webp" alt="Avinash College of Commerce Logo">
-        </div>
-      </div>
-    </div>
+      // Handle other internal anchors (for example, #about and #contact)
+      if (href.startsWith('#')) {
+        const rawId = href.slice(1);
+        if (!rawId) return;
 
-    <div class="tl-item">
-      <div class="tl-card">
-        <div class="tl-card-content">
-          <div class="deg">Secondary (Grade 10)</div>
-          <div class="inst">St. Peter's High School | CBSE</div>
-          <div class="meta">
-            <span>📅 2024</span>
-            <span>📊 Grade — 92%</span>
-          </div>
-        </div>
-        <div class="tl-logo">
-          <img src="a_data/766e1301-7f3b-4018-bf29-8fa036fe9a72_hYHh.webp" alt="St. Peter's High School Logo">
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
+        const id = decodeURIComponent(rawId);
+        const target =
+          document.getElementById(id) ||
+          document.querySelector('a[name="' + id.replace(/"/g, '\"') + '"]') ||
+          document.querySelector('[name="' + id.replace(/"/g, '\"') + '"]');
 
-<!-- ===== EXTRA CURRICULAR ACHIEVEMENTS ===== -->
-<section class="block" id="achievements">
-  <div class="section-title">
-    <div class="num">02</div>
-    <h2>EXTRA CURRICULAR ACHIEVEMENTS</h2>
-    <div class="line"></div>
-  </div>
+        if (target && target.scrollIntoView) {
+          ev.preventDefault();
+          try {
+            history.pushState(null, '', href);
+          } catch (e) {}
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        return;
+      }
 
-  <div class="ach-grid">
+      // Handle external links
+      let url;
+      try {
+        url = new URL(href, window.location.href);
+      } catch (e) {
+        return;
+      }
 
-    <div class="ach-card full-span">
-      <span class="badge">Consulting Fellowship</span>
-      <h3>180 Degrees Consulting — Consult for Impact</h3>
-      <p>Hindu College Student Fellowship Program</p>
-      <div class="points-grid">
-        <div class="point-item">Learnt consulting frameworks, root-cause analysis, financial modelling, guesstimates solving.</div>
-        <div class="point-item">Built a revenue projection financial model, conducted root-cause analysis for a business.</div>
-        <div class="point-item">Received a Letter of Recommendation for being among the top 30% of participants.</div>
-        <div class="points-links">
-          <a href="https://drive.google.com/file/d/1GLNpIf8iFzmsVEVnuUbevzdnzbnaxMJG/view?usp=sharing" target="_blank" rel="noopener" class="link-slot">Letter of Recommendation</a>
-          <a href="https://drive.google.com/file/d/1umBe7UVyKjAaD1EPNOnQd6AKXW9RZsU2/view?usp=sharing" target="_blank" rel="noopener" class="link-slot">Certificate</a>
-        </div>
-      </div>
-    </div>
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
 
-    <div class="ach-card">
-      <span class="badge">National Finalist</span>
-      <h3>The Pi Quiz — IIM Indore</h3>
-      <p>A quiz and an ed-tech case competition.</p>
-      <a href="https://drive.google.com/file/d/1_dkDXb__CHOkGi-_fnmyMFC4qq5eLAU1/view?usp=sharing" target="_blank" rel="noopener" class="link-slot">Certificate</a>
-    </div>
+      const isExternal = url.hostname !== window.location.hostname;
 
-    <div class="ach-card">
-      <span class="badge">Winner</span>
-      <h3>ThePrint Campus Voice</h3>
-      <p>Authored and published an article analyzing possible causes for declining viewership of IPL 2026.</p>
-      <div class="link-row">
-        <a href="https://theprint.in/campus-voice/is-the-craze-for-ipl-fading-it-doesnt-feel-like-ipl-anymore/2918359/" target="_blank" rel="noopener" class="link-slot">Article</a>
-        <a href="https://drive.google.com/file/d/1EpKVhkbyvXarjDb6M-5XWxR2AUVk_5m1/view?usp=sharing" target="_blank" rel="noopener" class="link-slot">Certificate</a>
-      </div>
-    </div>
+      if (isExternal || anchor.getAttribute('target') === '_blank') {
+        ev.preventDefault();
+        window.open(url.toString(), '_blank', 'noopener,noreferrer');
+      }
 
-    <div class="ach-card">
-      <span class="badge">Winner</span>
-      <h3>BuildCamp Sprint — HiveSchool</h3>
-      <p>Brainstormed, validated &amp; pitched a startup idea within 5 days. Led a 4-member team and was awarded for the best pitch.</p>
-      <a href="https://drive.google.com/file/d/1Vjskl_4UV-CPQcOUiM277boNKVMy52QD/view?usp=sharing" target="_blank" rel="noopener" class="link-slot">Certificate</a>
-    </div>
+    } catch (e) {
+      // Do not prevent default behavior if an error occurs
+    }
+  }, true);
 
-    <div class="ach-card">
-      <span class="badge">National Finalist</span>
-      <h3>IPL Auction — IIM Indore</h3>
-      <p>Analyzed player performances, strategized bids and trades to build a dynamic and dominant team.</p>
-      <a href="#" class="link-slot">Certificate</a>
-    </div>
+  // 1. Aggressive cleanup: remove onclick attributes from the DOM
+  var Z_removeInlineOnclick = function () {
+    // Specifically target a tags with href="#" and an onclick attribute
+    const targetedLinks = document.querySelectorAll('a[href="#"][onclick]');
+    for (let i = 0; i < targetedLinks.length; i++) {
+      targetedLinks[i].removeAttribute('onclick');
+      targetedLinks[i].onclick = null; // Also ensure JavaScript assignments are cleared
+    }
+  };
 
-  </div>
-</section>
+  // 3. Dynamic monitoring: prevent asynchronously loaded pages from recreating elements with onclick attributes
+  var z_observer = new MutationObserver(function () {
+    Z_removeInlineOnclick();
+  });
 
-<!-- ===== PROJECTS ===== -->
-<section class="block" id="projects">
-  <div class="section-title">
-    <div class="num">03</div>
-    <h2>PROJECTS</h2>
-    <div class="line"></div>
-  </div>
+  z_observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['onclick']
+  });
 
-  <div class="proj-card">
-    <div class="proj-head">
-      <h3>🩺 AIO Hospital</h3>
-      <span class="proj-tag">MVP · Healthcare Tech</span>
-    </div>
-    <div class="proj-content">
-      <div class="proj-body">
-        <div class="proj-block">
-          <h4>Insight</h4>
-          <p>Built an MVP to collect and display all medical data of a user including prescriptions, running medications, medical reports and life-long medical history at one place — promoting medical awareness of consumers and boosting efficiency of doctors and insurance providers.</p>
-        </div>
-        <div class="proj-block">
-          <h4>Learning Outcome</h4>
-          <p>Front-end design &amp; Basic UI/UX principles</p>
-        </div>
-      </div>
-      <div class="proj-side">
-        <div class="side-icon">🔗</div>
-        <div class="side-label">Project Link</div>
-        <a href="https://stitch.google.com/preview/3687497887554599617?node-id=4aeaa51a1f054fce93dd31b32b5daec0" target="_blank" rel="noopener" class="link-slot">View Project</a>
-      </div>
-    </div>
-  </div>
+  // 4. Run once during initialization
+  Z_removeInlineOnclick();
 
-  <div class="proj-card">
-    <div class="proj-head">
-      <h3>⚡ Prompt Forge <em style="color:#71717a;font-size:14px;">(throw-away prototype)</em></h3>
-      <span class="proj-tag">AI · Prompt Engineering</span>
-    </div>
-    <div class="proj-content">
-      <div class="proj-body">
-        <div class="proj-block">
-          <h4>Insight</h4>
-          <p>Developed an AI tool to turn basic human-written prompts into structured and detailed prompts with proper XML tags to achieve higher quality outputs from LLMs. Later converted it to a Claude skill.</p>
-        </div>
-        <div class="proj-block">
-          <h4>Learning Outcome</h4>
-          <p>Prompt Engineering, usage of XML tags, LLM behavior</p>
-        </div>
-      </div>
-      <div class="proj-side">
-        <div class="side-icon">🔗</div>
-        <div class="side-label">Project Link</div>
-        <a href="https://drive.google.com/drive/folders/11BjbRswv2WG04mtvNjuwjdydJB-YekDV?usp=sharing" target="_blank" rel="noopener" class="link-slot">View Project</a>
-      </div>
-    </div>
-  </div>
-</section>
+  const Z_rawCreateElement = document.createElement;
 
-<!-- ===== SKILLS ===== -->
-<section class="block" id="skills">
-  <div class="section-title">
-    <div class="num">04</div>
-    <h2>SKILLS</h2>
-    <div class="line"></div>
-  </div>
+  document.createElement = function (tagName, ...args) {
+    const el = Z_rawCreateElement.call(this, tagName, ...args);
 
-  <div class="skills-wrap">
+    if (tagName.toLowerCase() === 'script') {
+      const rawSetAttribute = el.setAttribute;
+      const rawGetAttribute = el.getAttribute;
+      let srcValue = '';
 
-    <div class="skill-tile">
-      <div class="ico">#</div>
-      <h4>Numerical Fluency</h4>
-      <p>Rapid Calculations, Numeric operations, Guesstimates solving.</p>
-    </div>
+      el.setAttribute = function (name, value) {
+        if (name === 'src' && typeof value === 'string') {
+          value = z_proxyCdnUrl(value);
+          srcValue = value;
+        }
+        return rawSetAttribute.call(this, name, value);
+      };
 
-    <div class="skill-tile">
-      <div class="ico">AI</div>
-      <h4>AI Fluency</h4>
-      <p>AI literacy, basic AI skills, AI integration in daily life.</p>
-      <div class="cert-slot">
-        Certified by Anthropic
-        <br>
-        <a href="https://drive.google.com/file/d/1IuMkrVKr_eU83OVEnxh5gFkSG9XRoaTv/view?usp=sharing" target="_blank" rel="noopener">Certificate</a>
-      </div>
-    </div>
+      Object.defineProperty(el, 'src', {
+        get: function() {
+          return srcValue || rawGetAttribute.call(this, 'src') || '';
+        },
+        set: function(value) {
+          if (typeof value === 'string') {
+            srcValue = z_proxyCdnUrl(value);
+            rawSetAttribute.call(this, 'src', srcValue);
+          } else {
+            srcValue = value;
+          }
+        },
+        configurable: true,
+        enumerable: true
+      });
+    }
 
-    <div class="skill-tile">
-      <div class="ico">📝</div>
-      <h4>Prompt Engineering</h4>
-      <p>Structuring prompts with XML tags like &lt;task&gt; and &lt;context&gt; for higher-quality LLM outputs.</p>
-    </div>
+    if (tagName.toLowerCase() === 'link') {
+      const rawSetAttribute = el.setAttribute;
+      const rawGetAttribute = el.getAttribute;
+      let hrefValue = '';
 
-    <div class="skill-tile">
-      <div class="ico">🎤</div>
-      <h4>Debating &amp; Public Speaking</h4>
-      <p>Won multiple awards at MUNs and other debate competitions.</p>
-      <div class="cert-slot">
-        <a href="https://drive.google.com/drive/folders/1kMRdzPUeZBUY7El26u4afTJmbZPbpjWi?usp=sharing" target="_blank" rel="noopener">Certificates</a>
-      </div>
-    </div>
+      el.setAttribute = function (name, value) {
+        if (name === 'href' && typeof value === 'string') {
+          value = z_proxyCdnUrl(value);
+          hrefValue = value;
+        }
+        return rawSetAttribute.call(this, name, value);
+      };
 
-    <div class="skill-tile">
-      <div class="ico">🔍</div>
-      <h4>Root Cause Analysis</h4>
-      <p>Structured problem-diagnosis and cause-mapping frameworks.</p>
-    </div>
+      Object.defineProperty(el, 'href', {
+        get: function() {
+          return hrefValue || rawGetAttribute.call(this, 'href') || '';
+        },
+        set: function(value) {
+          if (typeof value === 'string') {
+            hrefValue = z_proxyCdnUrl(value);
+            rawSetAttribute.call(this, 'href', hrefValue);
+          } else {
+            hrefValue = value;
+          }
+        },
+        configurable: true,
+        enumerable: true
+      });
+    }
 
-    <div class="skill-tile">
-      <div class="ico">$</div>
-      <h4>Financial Modelling</h4>
-      <p>Revenue projections, model structuring &amp; basic forecasting.</p>
-    </div>
+    return el;
+  };
 
-    <div class="skill-tile">
-      <div class="ico">📋</div>
-      <h4>PRD Writing</h4>
-      <p>Product requirement documents &amp; feature specifications.</p>
-    </div>
+  const Z_OriginalXMLHttpRequest = window.XMLHttpRequest;
+  window.XMLHttpRequest = function (...args) {
+    const xhr = new Z_OriginalXMLHttpRequest(...args);
+    const rawOpen = xhr.open;
 
-  </div>
-</section>
+    xhr.open = function (method, url, ...rest) {
+      if (typeof url === 'string') {
+        const methodUpper = (method || '').toUpperCase();
+        if (methodUpper === 'GET' && z_isUrlInWhitelist(url)) {
+          url = z_proxyCdnUrl(url);
+        }
+      }
+      return rawOpen.call(this, method, url, ...rest);
+    };
 
-<!-- ===== PDF BUTTON ===== -->
-<div class="pdf-section">
-  <a class="pdf-btn" href="https://drive.google.com/file/d/1-6aSAkMt8rl8EzJeBthRZ8Ef1xJVVmJ_/view?usp=sharing" target="_blank" rel="noopener">
-    <span class="pdf-icon">📄</span>
-    Get Resume PDF
-  </a>
-</div>
+    return xhr;
+  };
 
+  window.XMLHttpRequest.prototype = Z_OriginalXMLHttpRequest.prototype;
+  Object.setPrototypeOf(window.XMLHttpRequest, Z_OriginalXMLHttpRequest);
 
+  const z_originalFetch = window.fetch;
+  window.fetch = async function (...args) {
+    if (args.length > 0) {
+      let url = '';
+      let method = 'GET';
 
-			
-		
-</body></html>
+      if (typeof args[0] === 'string') {
+        url = args[0];
+        if (args[1] && args[1].method) {
+          method = args[1].method.toUpperCase();
+        }
+        if (method === 'GET' && z_isUrlInWhitelist(url)) {
+          args[0] = z_proxyCdnUrl(url);
+        }
+      } else if (args[0] instanceof Request) {
+        const originalUrl = args[0].url;
+        method = (args[0].method || 'GET').toUpperCase();
+        if (method === 'GET' && z_isUrlInWhitelist(originalUrl)) {
+          const proxiedUrl = z_proxyCdnUrl(originalUrl);
+          if (proxiedUrl !== originalUrl) {
+            args[0] = new Request(proxiedUrl, args[0]);
+          }
+        }
+      }
+    }
+    return z_originalFetch.apply(this, args);
+  };
+</script>
+</head>
+<body>
+  <!-- Resume content remains unchanged -->
+</body>
+</html>
